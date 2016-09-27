@@ -11,8 +11,8 @@ Requirements:
  + [twitter4j-core](http://twitter4j.org) (Apache 2.0 licence)
    + depends on [JSON](http://json.org) ([JSON licence](http://www.json.org/license.html))
  + [FasterXML](http://wiki.fasterxml.com/JacksonHome) (Apache 2.0 licence)
- <!-- + [jcommander](http://jcommander.org) (Apache 2.0 licence)
- + [httpcomponents](https://hc.apache.org/) (Apache 2.0 licence) -->
+ + [Google Guava](https://github.com/google/guava) (Apache 2.0 licence)
+ + [Commons CLI](https://commons.apache.org/cli) (Apache 2.0 licence)
 
 Built with [Gradle 3.0](http://gradle.org).
 
@@ -54,55 +54,34 @@ If you've just downloaded the binary distribution, do this from within the unzip
 archive (i.e. in the `get-twitter-profiles` directory). Otherwise, if you've just built
 the app from source, do this from within `PROJECT_ROOT/build/install/get-twitter-profiles`:
 <pre>
-Usage: bin/get-twitter-user[.bat] [options]
+Usage: bin/get-twitter-profiles[.bat] [options]
   Options:
     -c, --credentials
        Properties file with Twitter OAuth credentials
        Default: ./twitter.properties
-    -f, --filter-level
-       Filter level (options: none, low, medium)
+    -i, --ids-file
+       Path to a file with Twitter screen names, one per line
        Default: none
-    -g, --geo
-       Geo-boxes as two lat/longs expressed as four doubles separated by spaces
-       Default: []
+    -o, --output-directory
+       Path to a directory into which to write the fetched profiles
+       Default: ./output
     -h, --help
        Print usage instructions
        Default: false
-    -i, --include-media
-       Include media from tweets
-       Default: false
-    -l, --language
-       Specify Tweet language (BCP 47)
-       Default: [en]
-    -o, --output
-       Root directory to which to write output
-       Default: ./output
-    -q, --queue-size
-       Size of processing queue (in tweets)
-       Default: 1024
-    -s, --screen-name
-       Screen name of a user to follow
-       Default: []
-    -t, --term
-       Filter term
-       Default: []
-    -u, --user-id
-       ID of a user to follow
-       Default: []
     -debug
        Debug mode
        Default: false
 </pre>
 
-Run the app with your desired configuration, e.g. `weberdc`, `#auspol`, ...:
+Run the app with the list of screen names you wish to fetch:
 <pre>
-prompt> bin/tweet-streamer --screen-name weberdc -t '#auspol' -debug
+prompt> bin/get-twitter-profiles --ids-list screennames.txt -o path/to/profiles -debug
 </pre>
 
-This will create a directory `output/<timestamp>` and create/download the following:
-
- + `info.json` includes the configuration specified (a map of parameters)
- + matching tweets, one per line, in a file in `output/<timestamp>/tweets/`
+This will create a directory `path/to/profiles` and create a file for each
+profile downloaded, with the filename `profile-<profile-id>.json`. Profiles are
+fetched in batches of 100, which is the limit applied by Twitter's relevant
+[API call](https://dev.twitter.com/rest/reference/get/users/lookup).
 
 Attempts have been made to account for Twitter's rate limits, so at times the
 app will pause, waiting until the rate limit has refreshed. It reports how long
