@@ -1,4 +1,4 @@
-# Listen to Twitter's Streaming API
+# Fetch Twitter profiles in batches
 
 Author: **Derek Weber** (with many thanks to [http://twitter4j.org]() examples)
 
