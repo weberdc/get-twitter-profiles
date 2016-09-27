@@ -15,77 +15,20 @@
  */
 package au.org.dcw.twitter.ingest;
 
-import java.awt.image.BufferedImage;
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.Closeable;
-import java.io.File;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.Reader;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.nio.file.LinkOption;
-import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardOpenOption;
-import java.security.KeyManagementException;
-import java.security.NoSuchAlgorithmException;
-import java.security.SecureRandom;
-import java.security.cert.CertificateException;
-import java.security.cert.X509Certificate;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
-import java.util.Properties;
-import java.util.Set;
-import java.util.TreeMap;
-import java.util.TreeSet;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
 import java.util.stream.Collectors;
 
-import javax.imageio.ImageIO;
-import javax.net.ssl.KeyManager;
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.TrustManager;
-import javax.net.ssl.X509TrustManager;
-
-import org.apache.http.Consts;
-import org.apache.http.HttpEntity;
-import org.apache.http.NameValuePair;
-import org.apache.http.client.entity.UrlEncodedFormEntity;
-import org.apache.http.client.methods.CloseableHttpResponse;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.HttpClientBuilder;
-import org.apache.http.message.BasicNameValuePair;
-import org.apache.http.util.EntityUtils;
-
-import com.beust.jcommander.IStringConverter;
-import com.beust.jcommander.JCommander;
-import com.beust.jcommander.Parameter;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-
-import twitter4j.ExtendedMediaEntity;
-import twitter4j.FilterQuery;
-import twitter4j.MediaEntity;
-import twitter4j.StallWarning;
-import twitter4j.Status;
-import twitter4j.StatusDeletionNotice;
-import twitter4j.StatusListener;
-import twitter4j.TwitterObjectFactory;
-import twitter4j.TwitterStream;
-import twitter4j.TwitterStreamFactory;
-import twitter4j.URLEntity;
-import twitter4j.UserMentionEntity;
-import twitter4j.conf.Configuration;
-import twitter4j.conf.ConfigurationBuilder;
+import org.apache.commons.cli.BasicParser;
+import org.apache.commons.cli.CommandLine;
+import org.apache.commons.cli.CommandLineParser;
+import org.apache.commons.cli.HelpFormatter;
+import org.apache.commons.cli.Options;
+import org.apache.commons.cli.ParseException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Application that collects the profiles of Twitter users.
@@ -94,13 +37,77 @@ import twitter4j.conf.ConfigurationBuilder;
  * @see <a href=
  *      "https://github.com/yusuke/twitter4j/blob/master/twitter4j-examples/src/main/java/twitter4j/examples/json/SaveRawJSON.java">SaveRawJSON.java</a>
  * @see <a href=
- *      "https://github.com/yusuke/twitter4j/blob/master/twitter4j-examples/src/main/java/twitter4j/examples/stream/PrintSampleStream.java">Twitter4j
- *      Streaming Exapmle</a>
- * @see <a href=
  *      "https://dev.twitter.com/streaming/reference/post/statuses/filter">Twitter's
  *      <code>/statuses/filter</code> endpoint</a>
  */
 public final class TwitterProfilesRetrieverApp {
+    private static Logger LOG = LoggerFactory.getLogger(TwitterProfilesRetrieverApp.class);
+    private static final Options OPTIONS = new Options();
+    static {
+        OPTIONS.addOption("i", "ids-file", true, "File of Twitter screen names");
+        OPTIONS.addOption("o", "output-directory", true, "Directory to which to write profiles (default: ./profiles)");
+        OPTIONS.addOption("?", "help", false, "Ask for help with using this tool.");
+    }
+
+    private static String screenNamesFile = null;
+    private static List<String> screenNames = null;
+    private static String outputDir = "./profiles";
+
+    /**
+     * Parses the provided command line arguments and sets class fields accordingly.
+     *
+     * @param args The arguments provided to the app on the commandline.
+     */
+    private static void parseArgs(String[] args) {
+        CommandLineParser parser = new BasicParser();
+        try {
+            CommandLine cmd = parser.parse(OPTIONS, args);
+            if (cmd.hasOption('i')) screenNamesFile = cmd.getOptionValue('i');
+            if (cmd.hasOption('o')) outputDir = cmd.getOptionValue('o');
+            if (cmd.hasOption('h')) printUsageAndExit();
+        } catch (ParseException e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * Prints how the app ought to be used and causes the VM to exit.
+     */
+    private static void printUsageAndExit() {
+        new HelpFormatter().printHelp("TwitterProfilesRetrieverApp", OPTIONS);
+        System.exit(0);
+    }
+
+    /**
+     * Checks whether enough fields have been set to successfully run.
+     */
+    private static void checkConfig() {
+        if (screenNamesFile == null) {
+            printUsageAndExit();
+        }
+    }
+
+    public static void main(String[] args) throws IOException {
+        parseArgs(args);
+        checkConfig();
+
+        LOG.info("Collecting profiles");
+        LOG.info("  file of Twitter screen names: " + screenNamesFile);
+        LOG.info("  output directory: " + outputDir);
+
+        List<String> readAllLines = loadScreenNames();
+        screenNames = readAllLines;
+
+        LOG.info("Read {} screen names", screenNames.size());
+    }
+
+    private static List<String> loadScreenNames() throws IOException {
+        return Files.readAllLines(Paths.get(screenNamesFile)).stream()
+            .map(l -> l.trim())
+            .filter(l -> l.length() > 0 && ! l.startsWith("#"))
+            .map(sn -> (sn.startsWith("@") ? sn.substring(1): sn))
+            .collect(Collectors.toList());
+    }
 }
 //     static class Tweet {
 //         public final Status status;

@@ -2,18 +2,17 @@
 
 Author: **Derek Weber** (with many thanks to [http://twitter4j.org]() examples)
 
-Last updated: **2016-08-18**
+Last updated: **2016-09-27**
 
-Simple app to listen to Twitter's streaming API, given one or more filtering
-terms.
+App to retrieve Twitter profiles in batches.
 
 Requirements:
  + Java Development Kit 1.8
  + [twitter4j-core](http://twitter4j.org) (Apache 2.0 licence)
    + depends on [JSON](http://json.org) ([JSON licence](http://www.json.org/license.html))
  + [FasterXML](http://wiki.fasterxml.com/JacksonHome) (Apache 2.0 licence)
- + [jcommander](http://jcommander.org) (Apache 2.0 licence)
- + [httpcomponents](https://hc.apache.org/) (Apache 2.0 licence)
+ <!-- + [jcommander](http://jcommander.org) (Apache 2.0 licence)
+ + [httpcomponents](https://hc.apache.org/) (Apache 2.0 licence) -->
 
 Built with [Gradle 3.0](http://gradle.org).
 
@@ -27,7 +26,7 @@ By running
 
 `$ ./gradlew installDist` or `$ gradlew.bat installDist`
 
-you will create an installable copy of the app in `PROJECT_ROOT/build/tweet-streamer`.
+you will create an installable copy of the app in `PROJECT_ROOT/build/get-twitter-profiles`.
 
 Use the target `distZip` to make a distribution in `PROJECT_ROOT/build/distributions`
 or the target `timestampedDistZip` to add a timestamp to the distribution archive filename.
@@ -52,8 +51,8 @@ the password-related ones commented and the app will ask for the password.
 
 ## Usage
 If you've just downloaded the binary distribution, do this from within the unzipped
-archive (i.e. in the `tweet-streamer` directory). Otherwise, if you've just built
-the app from source, do this from within `PROJECT_ROOT/build/install/tweet-streamer`:
+archive (i.e. in the `get-twitter-profiles` directory). Otherwise, if you've just built
+the app from source, do this from within `PROJECT_ROOT/build/install/get-twitter-profiles`:
 <pre>
 Usage: bin/get-twitter-user[.bat] [options]
   Options:
