@@ -2,7 +2,7 @@
 
 Author: **Derek Weber** (with many thanks to [http://twitter4j.org]() examples)
 
-Last updated: **2016-09-27**
+Last updated: **2016-10-08**
 
 App to retrieve Twitter profiles in batches.
 
@@ -86,3 +86,12 @@ fetched in batches of 100, which is the limit applied by Twitter's relevant
 Attempts have been made to account for Twitter's rate limits, so at times the
 app will pause, waiting until the rate limit has refreshed. It reports how long
 it will wait when it does have to pause.
+
+## Post-processing
+
+If you want to create a list of IDs from the collected profiles, say, for the
+[get-twitter-user-resources](https://github.com/weberdc/get-twitter-user-resources)
+app, simply use a command based on jq, such as:
+<pre>
+$  cat output/profile-* | jq '. | "\(.id_str) # \(.screen_name)"' | tr -d '"' > my_ids.txt
+</pre>
