@@ -93,5 +93,5 @@ If you want to create a list of IDs from the collected profiles, say, for the
 [get-twitter-user-resources](https://github.com/weberdc/get-twitter-user-resources)
 app, simply use a command based on jq, such as:
 <pre>
-$  cat output/profile-* | jq '. | "\(.id_str) # \(.screen_name)"' | tr -d '"' > my_ids.txt
+$  cat output/profile-* | jq '. | "\(.id_str) # @\(.screen_name)"' | tr -d '"' > my_ids.txt
 </pre>
