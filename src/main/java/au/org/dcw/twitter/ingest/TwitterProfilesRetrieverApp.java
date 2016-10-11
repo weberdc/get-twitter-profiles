@@ -66,6 +66,7 @@ import twitter4j.conf.ConfigurationBuilder;
 public final class TwitterProfilesRetrieverApp {
     private static Logger LOG = LoggerFactory.getLogger(TwitterProfilesRetrieverApp.class);
     private static final int FETCH_BATCH_SIZE = 100;
+    private static final String FILE_SEPARATOR = System.getProperty("file.separator", "/");
     private static final Options OPTIONS = new Options();
     static {
         OPTIONS.addOption("i", "ids-file", true, "File of Twitter screen names");
@@ -162,7 +163,7 @@ public final class TwitterProfilesRetrieverApp {
                     final String profileId = profileNode.get("id_str").asText();
                     final String screenName = profileNode.get("screen_name").asText();
 
-                    final String fileName = outputDir + "/profile-" + profileId + ".json";
+                    final String fileName = outputDir + FILE_SEPARATOR + profileId + "-profile.json";
 
                     LOG.info("Profile @{} {} -> {}", screenName, profileId, fileName);
                     try {
