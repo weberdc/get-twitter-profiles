@@ -23,8 +23,10 @@ import java.io.OutputStreamWriter;
 import java.io.Reader;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.stream.Collectors;
 
@@ -40,6 +42,7 @@ import org.slf4j.LoggerFactory;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
 
 import twitter4j.RateLimitStatus;
 import twitter4j.RateLimitStatusEvent;
@@ -65,6 +68,7 @@ import twitter4j.conf.ConfigurationBuilder;
  */
 public final class TwitterProfilesRetrieverApp {
     private static Logger LOG = LoggerFactory.getLogger(TwitterProfilesRetrieverApp.class);
+    private static boolean includeProtected;
     private static final int FETCH_BATCH_SIZE = 100;
     private static final String FILE_SEPARATOR = System.getProperty("file.separator", "/");
     private static final Options OPTIONS = new Options();
@@ -72,6 +76,7 @@ public final class TwitterProfilesRetrieverApp {
         OPTIONS.addOption("i", "ids-file", true, "File of Twitter screen names");
         OPTIONS.addOption("o", "output-directory", true, "Directory to which to write profiles (default: ./profiles)");
         OPTIONS.addOption("c", "credentials", true, "File of Twitter credentials (default: ./twitter.properties)");
+        OPTIONS.addOption("p", "include-protected", false, "Include protected accounts in ID listing (default: false)");
         OPTIONS.addOption("d", "debug", false, "Turn on debugging information (default: false)");
         OPTIONS.addOption("?", "help", false, "Ask for help with using this tool.");
     }
@@ -96,6 +101,7 @@ public final class TwitterProfilesRetrieverApp {
             if (cmd.hasOption('o')) outputDir = cmd.getOptionValue('o');
             if (cmd.hasOption('c')) credentialsFile = cmd.getOptionValue('c');
             if (cmd.hasOption('d')) debug = true;
+            if (cmd.hasOption('p')) includeProtected = true;
             if (cmd.hasOption('h')) printUsageAndExit();
         } catch (ParseException e) {
             e.printStackTrace();
@@ -143,6 +149,8 @@ public final class TwitterProfilesRetrieverApp {
         twitter.addRateLimitStatusListener(this.rateLimitStatusListener);
         final ObjectMapper json = new ObjectMapper();
 
+        final List<String> notCollected = new ArrayList<String>(screenNames);
+        final Map<String, String> idScreenNameMap = Maps.newTreeMap();
         for (final List<String> batch : Lists.partition(screenNames, FETCH_BATCH_SIZE)) {
 
             try {
@@ -163,35 +171,56 @@ public final class TwitterProfilesRetrieverApp {
                     final String profileId = profileNode.get("id_str").asText();
                     final String screenName = profileNode.get("screen_name").asText();
 
+                    notCollected.remove(screenName);
+
+                    if (includeProtected || ! profileNode.get("protected").asBoolean()) {
+                        idScreenNameMap.put(profileId, screenName);
+                    }
+                    if (profileNode.get("protected").asBoolean()) {
+                        LOG.info("Account #{} (@{}) is protected.", profileId, screenName);
+                    }
+
                     final String fileName = outputDir + FILE_SEPARATOR + profileId + "-profile.json";
 
                     LOG.info("Profile @{} {} -> {}", screenName, profileId, fileName);
                     try {
-                        saveJSON(profileNode.toString(), fileName);
+                        saveText(profileNode.toString(), fileName);
                     } catch (IOException e) {
                         LOG.warn("Failed to write to {}", fileName, e);
                     }
                 });
 
+
             } catch (TwitterException e) {
                 LOG.warn("Failed to communicate with Twitter", e);
             }
         }
+        notCollected.stream().forEach(sn -> LOG.info("Did not collect @{}", sn));
+
+        final String notCollectedReport = notCollected.stream()
+            .map(sn -> "\"" + sn + "\"")
+            .collect(Collectors.joining(",", "[", "]"));
+        saveText(notCollectedReport, outputDir + FILE_SEPARATOR + "profiles-not-collected.json");
+
+        final String idCSV = idScreenNameMap.entrySet().stream()
+            .map(e -> String.format("%s # @%s\n", e.getKey(), e.getValue()))
+            .collect(Collectors.joining());
+        saveText(idCSV, outputDir + FILE_SEPARATOR + "ids.txt");
     }
 
 
     /**
-     * Writes the given {@code rawJSON} {@link String} to the specified file.
+     * Writes the given {@code text} to the specified file with UTF-8 encoding.
      *
-     * @param rawJSON  the JSON String to persist
-     * @param fileName the file (including path) to which to write the JSON
+     * @param text the text to persist
+     * @param fileName the file (including path) to which to write the text
      * @throws IOException if there's a problem writing to the specified file
      */
-    private static void saveJSON(final String rawJSON, final String fileName) throws IOException {
+    private static void saveText(final String text, final String fileName) throws IOException {
         try (final FileOutputStream fos = new FileOutputStream(fileName);
              final OutputStreamWriter osw = new OutputStreamWriter(fos, "UTF-8");
              final BufferedWriter bw = new BufferedWriter(osw)) {
-            bw.write(rawJSON);
+            bw.write(text);
             bw.flush();
         }
     }
