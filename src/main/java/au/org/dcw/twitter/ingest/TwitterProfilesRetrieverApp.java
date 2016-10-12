@@ -177,12 +177,12 @@ public final class TwitterProfilesRetrieverApp {
                         idScreenNameMap.put(profileId, screenName);
                     }
                     if (profileNode.get("protected").asBoolean()) {
-                        LOG.info("Account #{} (@{}) is protected.", profileId, screenName);
+                        LOG.info("Profile @{} (#{}) is protected.", screenName, profileId);
                     }
 
                     final String fileName = outputDir + FILE_SEPARATOR + profileId + "-profile.json";
 
-                    LOG.info("Profile @{} {} -> {}", screenName, profileId, fileName);
+                    LOG.info("Profile @{} (#{}) -> {}", screenName, profileId, fileName);
                     try {
                         saveText(profileNode.toString(), fileName);
                     } catch (IOException e) {
@@ -198,9 +198,9 @@ public final class TwitterProfilesRetrieverApp {
         notCollected.stream().forEach(sn -> LOG.info("Did not collect @{}", sn));
 
         final String notCollectedReport = notCollected.stream()
-            .map(sn -> "\"" + sn + "\"")
-            .collect(Collectors.joining(",", "[", "]"));
-        saveText(notCollectedReport, outputDir + FILE_SEPARATOR + "profiles-not-collected.json");
+            .map(sn -> "@" + sn)
+            .collect(Collectors.joining("\n"));
+        saveText(notCollectedReport, outputDir + FILE_SEPARATOR + "profiles-not-collected.txt");
 
         final String idCSV = idScreenNameMap.entrySet().stream()
             .map(e -> String.format("%s # @%s\n", e.getKey(), e.getValue()))
@@ -227,7 +227,7 @@ public final class TwitterProfilesRetrieverApp {
 
     private List<String> loadScreenNames(final String screenNamesFile) throws IOException {
         return Files.readAllLines(Paths.get(screenNamesFile)).stream()
-            .map(l -> l.trim())
+            .map(l -> l.split("#")[0].trim())
             .filter(l -> l.length() > 0 && ! l.startsWith("#"))
             .map(sn -> (sn.startsWith("@") ? sn.substring(1): sn))
             .collect(Collectors.toList());
