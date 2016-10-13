@@ -34,6 +34,7 @@ import org.apache.commons.cli.BasicParser;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
 import org.apache.commons.cli.HelpFormatter;
+import org.apache.commons.cli.OptionBuilder;
 import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
 import org.slf4j.Logger;
@@ -66,6 +67,7 @@ import twitter4j.conf.ConfigurationBuilder;
  *      "https://dev.twitter.com/rest/reference/get/users/lookup">Twitter's
  *      <code>GET users/lookup</code> endpoint</a>
  */
+@SuppressWarnings("static-access")
 public final class TwitterProfilesRetrieverApp {
     private static Logger LOG = LoggerFactory.getLogger(TwitterProfilesRetrieverApp.class);
     private static boolean includeProtected;
@@ -74,12 +76,19 @@ public final class TwitterProfilesRetrieverApp {
     private static final Options OPTIONS = new Options();
     static {
         OPTIONS.addOption("i", "ids-file", true, "File of Twitter screen names");
+        OPTIONS.addOption(longOpt("screen-names", "Inline, comma-delimited listing of Twitter screen names to look up (alternative to --ids-file)").hasArg().create());
         OPTIONS.addOption("o", "output-directory", true, "Directory to which to write profiles (default: ./profiles)");
         OPTIONS.addOption("c", "credentials", true, "File of Twitter credentials (default: ./twitter.properties)");
         OPTIONS.addOption("p", "include-protected", false, "Include protected accounts in ID listing (default: false)");
         OPTIONS.addOption("d", "debug", false, "Turn on debugging information (default: false)");
         OPTIONS.addOption("?", "help", false, "Ask for help with using this tool.");
     }
+
+
+    private static OptionBuilder longOpt(String name, String description) {
+        return OptionBuilder.withLongOpt(name).withDescription(description);
+    }
+
 
     /**
      * Prints how the app ought to be used and causes the VM to exit.
@@ -89,15 +98,17 @@ public final class TwitterProfilesRetrieverApp {
         System.exit(0);
     }
 
+
     public static void main(String[] args) throws IOException {
         final CommandLineParser parser = new BasicParser();
-        String screenNamesFile = null;
+        String screenNames = null;
         String outputDir = "./output";
         String credentialsFile = "./twitter.properties";
         boolean debug = false;
         try {
             final CommandLine cmd = parser.parse(OPTIONS, args);
-            if (cmd.hasOption('i')) screenNamesFile = cmd.getOptionValue('i');
+            if (cmd.hasOption('i')) screenNames = cmd.getOptionValue('i');
+            if (cmd.hasOption("screen-names")) screenNames = cmd.getOptionValue("screen-names");
             if (cmd.hasOption('o')) outputDir = cmd.getOptionValue('o');
             if (cmd.hasOption('c')) credentialsFile = cmd.getOptionValue('c');
             if (cmd.hasOption('d')) debug = true;
@@ -107,34 +118,43 @@ public final class TwitterProfilesRetrieverApp {
             e.printStackTrace();
         }
         // check config
-        if (screenNamesFile == null) {
+        if (screenNames == null) {
             printUsageAndExit();
         }
 
-        new TwitterProfilesRetrieverApp().run(screenNamesFile, outputDir, credentialsFile, debug);
+        new TwitterProfilesRetrieverApp().run(screenNames, outputDir, credentialsFile, debug);
     }
 
+
     /**
-     * Fetch the profiles specified by the screen names in the given {@code screenNamesFile}
+     * Fetch the profiles specified by the given {@code givenScreenNames}
      * and write the profiles to the given {@code outputDir}.
      *
-     * @param screenNamesFile Path to file with screen names, one per line.
+     * @param givenScreenNames Screen names as a comma-delimited list OR as a path
+     *         to file with screen names, one per line.
      * @param outputDir Path to directory into which to write fetched profiles.
      * @param credentialsFile Path to properties file with Twitter credentials.
      * @param debug Whether to increase debug logging.
      */
     public void run(
-        final String screenNamesFile,
+        final String givenScreenNames,
         final String outputDir,
         final String credentialsFile,
         final boolean debug
     ) throws IOException {
 
         LOG.info("Collecting profiles");
-        LOG.info("  Twitter screen names: " + screenNamesFile);
+        LOG.info("  Twitter screen names: " + givenScreenNames);
         LOG.info("  output directory: " + outputDir);
 
-        final List<String> screenNames = this.loadScreenNames(screenNamesFile);
+        final List<String> screenNames = Lists.newArrayList();
+        if (givenScreenNames.contains(",")) {
+            for (String screenName : givenScreenNames.split(",")) {
+                screenNames.add(screenName);
+            }
+        } else {
+            screenNames.addAll(this.loadScreenNames(givenScreenNames));
+        }
 
         LOG.info("Read {} screen names", screenNames.size());
 
@@ -225,13 +245,24 @@ public final class TwitterProfilesRetrieverApp {
         }
     }
 
+
+    /**
+     * Reads screen names from each line of the given file, ignoring lines starting
+     * with # (comments) as well as trailing comments starting with # and eliminates duplicates.
+     *
+     * @param screenNamesFile File containing Twitter screen names, one per (non-comment) line.
+     * @return A set of unique screen names.
+     * @throws IOException If an error occurs reading the file.
+     */
     private List<String> loadScreenNames(final String screenNamesFile) throws IOException {
         return Files.readAllLines(Paths.get(screenNamesFile)).stream()
             .map(l -> l.split("#")[0].trim())
             .filter(l -> l.length() > 0 && ! l.startsWith("#"))
             .map(sn -> (sn.startsWith("@") ? sn.substring(1): sn))
+            .distinct()
             .collect(Collectors.toList());
     }
+
 
     /**
      * Listener to pay attention to when the Twitter's rate limit is being approached or breached.
@@ -247,6 +278,7 @@ public final class TwitterProfilesRetrieverApp {
             TwitterProfilesRetrieverApp.this.pauseIfNecessary(event.getRateLimitStatus());
         }
     };
+
 
     /**
      * If the provided {@link RateLimitStatus} indicates that we are about to break the rate
@@ -273,6 +305,7 @@ public final class TwitterProfilesRetrieverApp {
             LOG.info("Resuming...");
         }
     }
+
 
     /**
      * Builds the {@link Configuration} object with which to connect to Twitter,
@@ -308,6 +341,7 @@ public final class TwitterProfilesRetrieverApp {
         return conf.build();
     }
 
+
     /**
      * Loads the given {@code credentialsFile} from disk.
      *
@@ -320,6 +354,7 @@ public final class TwitterProfilesRetrieverApp {
         properties.load(Files.newBufferedReader(Paths.get(credentialsFile)));
         return properties;
     }
+
 
     /**
      * Loads proxy properties from {@code ./proxy.properties} and, if a password
