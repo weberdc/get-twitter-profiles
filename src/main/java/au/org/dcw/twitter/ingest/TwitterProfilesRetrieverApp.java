@@ -16,12 +16,12 @@
 package au.org.dcw.twitter.ingest;
 
 import java.io.BufferedWriter;
-import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.io.Reader;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Date;
@@ -70,9 +70,11 @@ import twitter4j.conf.ConfigurationBuilder;
  */
 @SuppressWarnings("static-access")
 public final class TwitterProfilesRetrieverApp {
-    private static Logger LOG = LoggerFactory.getLogger(TwitterProfilesRetrieverApp.class);
+    private static final String DEFAULT_CREDENTIALS_PATH = "./twitter.properties";
+    private static final Logger LOG = LoggerFactory.getLogger(TwitterProfilesRetrieverApp.class);
     private static final int FETCH_BATCH_SIZE = 100;
     private static final String FILE_SEPARATOR = System.getProperty("file.separator", "/");
+
     private static final Options OPTIONS = new Options();
     static {
         OPTIONS.addOption("i", "ids-file", true, "File of Twitter screen names or IDs (longs)");
@@ -105,7 +107,7 @@ public final class TwitterProfilesRetrieverApp {
         final CommandLineParser parser = new BasicParser();
         String identifiers = null;
         String outputDir = "./output";
-        String credentialsFile = "./twitter.properties";
+        String credentialsFile = DEFAULT_CREDENTIALS_PATH;
         boolean debug = false;
         boolean includeProtected = false;
         boolean useIDs = false;
@@ -185,7 +187,7 @@ public final class TwitterProfilesRetrieverApp {
         twitter.addRateLimitStatusListener(this.rateLimitStatusListener);
         final ObjectMapper json = new ObjectMapper();
 
-        final List<String> notCollected = new ArrayList<String>(identifiers);
+        final List<String> notCollected = new ArrayList<>(identifiers);
         final Map<String, String> idScreenNameMap = Maps.newTreeMap();
         for (final List<String> batch : Lists.partition(identifiers, FETCH_BATCH_SIZE)) {
 
@@ -238,6 +240,7 @@ public final class TwitterProfilesRetrieverApp {
                         LOG.warn("Failed to write to {}", fileName, e);
                     }
                 });
+                LOG.info("Collected {} of {} profiles", idScreenNameMap.size(), identifiers.size());
 
             } catch (TwitterException e) {
                 LOG.warn("Failed to communicate with Twitter", e);
@@ -381,26 +384,63 @@ public final class TwitterProfilesRetrieverApp {
      */
     private static Properties loadCredentials(final String credentialsFile) throws IOException {
         final Properties properties = new Properties();
-        properties.load(Files.newBufferedReader(Paths.get(credentialsFile)));
+
+        Path credsPath = Paths.get(credentialsFile);
+        if (credentialsFile.equals(DEFAULT_CREDENTIALS_PATH)) {
+            credsPath = checkPath(credsPath);
+        }
+
+        properties.load(Files.newBufferedReader(credsPath));
+
         return properties;
     }
 
 
     /**
-     * Loads proxy properties from {@code ./proxy.properties} and, if a password
-     * is not supplied, asks for it in the console.
+     * Examines the path (assumed to be to a file in the current directory) and checks
+     * if it exists, and resorts to looking in the user's home directory for a corresponding
+     * file if it does not. Returns the original, or the updated, path if a file is found
+     * and throws a {@link RuntimeException} if not.
+     *
+     * @param file The path to the local file to check.
+     * @return A valid path to an existing file.
+     * @throws RuntimeException if the file does not exist in the local or home directories.
+     */
+    private static Path checkPath(final Path file) {
+        if (! file.toFile().exists()) {
+            final String homePath = System.getProperty("user.home", ".") + FILE_SEPARATOR;
+            final String altPath = homePath + file.getFileName();
+
+            LOG.warn("No file at {}. Trying {}.", file, altPath);
+
+            final Path newPath = Paths.get(altPath);
+            if (! newPath.toFile().exists()) {
+                throw new RuntimeException(
+                    "Cannot find file at " + file + " nor alternative " + altPath
+                );
+            }
+            LOG.info("Found file at {}", newPath);
+            return newPath;
+        }
+        return file;
+    }
+
+
+    /**
+     * Loads proxy properties from {@code ./proxy.properties} or {@link ~/proxy.properties}
+     * and, if a password is not supplied, asks for it in the console.
      *
      * @return A Properties instance filled with proxy information.
      */
     private static Properties loadProxyProperties() {
         final Properties properties = new Properties();
-        final String proxyFile = "./proxy.properties";
-        if (new File(proxyFile).exists()) {
+        Path proxyPath = checkPath(Paths.get("./proxy.properties"));
+        if (proxyPath.toFile().exists()) {
             boolean success = true;
-            try (Reader fileReader = Files.newBufferedReader(Paths.get(proxyFile))) {
+            try (Reader fileReader = Files.newBufferedReader(proxyPath)) {
                 properties.load(fileReader);
             } catch (final IOException e) {
-                System.err.printf("Attempted and failed to load %s: %s\n", proxyFile, e.getMessage());
+                System.err.printf("Attempted and failed to load %s: %s\n", proxyPath, e.getMessage());
                 success = false;
             }
             if (success && !properties.containsKey("http.proxyPassword")) {
