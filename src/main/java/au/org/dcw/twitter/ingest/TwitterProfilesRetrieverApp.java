@@ -42,6 +42,7 @@ import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.common.base.Joiner;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 
@@ -70,16 +71,17 @@ import twitter4j.conf.ConfigurationBuilder;
 @SuppressWarnings("static-access")
 public final class TwitterProfilesRetrieverApp {
     private static Logger LOG = LoggerFactory.getLogger(TwitterProfilesRetrieverApp.class);
-    private static boolean includeProtected;
     private static final int FETCH_BATCH_SIZE = 100;
     private static final String FILE_SEPARATOR = System.getProperty("file.separator", "/");
     private static final Options OPTIONS = new Options();
     static {
-        OPTIONS.addOption("i", "ids-file", true, "File of Twitter screen names");
-        OPTIONS.addOption(longOpt("screen-names", "Inline, comma-delimited listing of Twitter screen names to look up (alternative to --ids-file)").hasArg().create());
+        OPTIONS.addOption("i", "ids-file", true, "File of Twitter screen names or IDs (longs)");
+        OPTIONS.addOption(longOpt("identifiers", "Inline, comma-delimited listing of Twitter screen names or IDs (longs) to look up (alternative to --screen-names-file)").hasArg().create());
+        OPTIONS.addOption(longOpt("use-ids", "Expect Twitter IDs (longs) as input rather than screen names (default: false)").create());
         OPTIONS.addOption("o", "output-directory", true, "Directory to which to write profiles (default: ./profiles)");
         OPTIONS.addOption("c", "credentials", true, "File of Twitter credentials (default: ./twitter.properties)");
         OPTIONS.addOption("p", "include-protected", false, "Include protected accounts in ID listing (default: false)");
+        OPTIONS.addOption("d", "debug", false, "Turn on debugging information (default: false)");
         OPTIONS.addOption("d", "debug", false, "Turn on debugging information (default: false)");
         OPTIONS.addOption("?", "help", false, "Ask for help with using this tool.");
     }
@@ -101,62 +103,76 @@ public final class TwitterProfilesRetrieverApp {
 
     public static void main(String[] args) throws IOException {
         final CommandLineParser parser = new BasicParser();
-        String screenNames = null;
+        String identifiers = null;
         String outputDir = "./output";
         String credentialsFile = "./twitter.properties";
         boolean debug = false;
+        boolean includeProtected = false;
+        boolean useIDs = false;
         try {
             final CommandLine cmd = parser.parse(OPTIONS, args);
-            if (cmd.hasOption('i')) screenNames = cmd.getOptionValue('i');
-            if (cmd.hasOption("screen-names")) screenNames = cmd.getOptionValue("screen-names");
+            if (cmd.hasOption('i')) identifiers = cmd.getOptionValue('i');
+            if (cmd.hasOption("identifiers")) identifiers = cmd.getOptionValue("identifiers");
             if (cmd.hasOption('o')) outputDir = cmd.getOptionValue('o');
             if (cmd.hasOption('c')) credentialsFile = cmd.getOptionValue('c');
             if (cmd.hasOption('d')) debug = true;
+            if (cmd.hasOption("use-ids")) useIDs = true;
             if (cmd.hasOption('p')) includeProtected = true;
             if (cmd.hasOption('h')) printUsageAndExit();
         } catch (ParseException e) {
             e.printStackTrace();
         }
         // check config
-        if (screenNames == null) {
+        if (identifiers == null) {
             printUsageAndExit();
         }
 
-        new TwitterProfilesRetrieverApp().run(screenNames, outputDir, credentialsFile, debug);
+        new TwitterProfilesRetrieverApp().run(
+            useIDs, identifiers, outputDir, credentialsFile, includeProtected, debug
+        );
     }
 
 
     /**
      * Fetch the profiles specified by the given {@code givenScreenNames}
-     * and write the profiles to the given {@code outputDir}.
+     * and write the profiles to the given {@code outputDir}. If any IDs cannot
+     * be collected, they are written to "profiles-not-collected.txt". A mapping
+     * of all IDs to screen names collected is written to "ids.txt".
      *
-     * @param givenScreenNames Screen names as a comma-delimited list OR as a path
-     *         to file with screen names, one per line.
+     * @param useIDs The identifiers will be Twitter IDs (longs) rather than String
+     *         screen names.
+     * @param givenIdentifiers Identifiers as a comma-delimited list OR as a path
+     *         to file with identifiers, one per line.
      * @param outputDir Path to directory into which to write fetched profiles.
      * @param credentialsFile Path to properties file with Twitter credentials.
+     * @param includeProtected When writing out the IDs and screen names of
+     *         collected profiles, include the protected accounts.
      * @param debug Whether to increase debug logging.
      */
     public void run(
-        final String givenScreenNames,
+        final boolean useIDs,
+        final String givenIdentifiers,
         final String outputDir,
         final String credentialsFile,
+        final boolean includeProtected,
         final boolean debug
     ) throws IOException {
 
         LOG.info("Collecting profiles");
-        LOG.info("  Twitter screen names: " + givenScreenNames);
-        LOG.info("  output directory: " + outputDir);
+        LOG.info("  Twitter identifiers: {}", givenIdentifiers);
+        LOG.info("  Identifiers, not screen names: {}", useIDs);
+        LOG.info("  output directory: {}", outputDir);
 
-        final List<String> screenNames = Lists.newArrayList();
-        if (givenScreenNames.contains(",")) {
-            for (String screenName : givenScreenNames.split(",")) {
-                screenNames.add(screenName);
+        final List<String> identifiers = Lists.newArrayList();
+        if (givenIdentifiers.contains(",")) {
+            for (String id : givenIdentifiers.split(",")) {
+                identifiers.add(id);
             }
         } else {
-            screenNames.addAll(this.loadScreenNames(givenScreenNames));
+            identifiers.addAll(this.loadIdentifiersAsStrings(givenIdentifiers));
         }
 
-        LOG.info("Read {} screen names", screenNames.size());
+        LOG.info("Read {} identifiers (screen names: {})", identifiers.size(), ! useIDs);
 
         if (!Files.exists(Paths.get(outputDir))) {
             LOG.info("Creating output directory {}", outputDir);
@@ -169,16 +185,25 @@ public final class TwitterProfilesRetrieverApp {
         twitter.addRateLimitStatusListener(this.rateLimitStatusListener);
         final ObjectMapper json = new ObjectMapper();
 
-        final List<String> notCollected = new ArrayList<String>(screenNames);
+        final List<String> notCollected = new ArrayList<String>(identifiers);
         final Map<String, String> idScreenNameMap = Maps.newTreeMap();
-        for (final List<String> batch : Lists.partition(screenNames, FETCH_BATCH_SIZE)) {
+        for (final List<String> batch : Lists.partition(identifiers, FETCH_BATCH_SIZE)) {
 
             try {
                 LOG.info("Looking up {} users' profiles", batch.size());
 
                 // ask Twitter for profiles
-                final String[] allocation = new String[batch.size()];
-                final ResponseList<User> profiles = twitter.lookupUsers(batch.toArray(allocation));
+                ResponseList<User> profiles;
+                if (useIDs) {
+                    final long[] idArray = new long[batch.size()];
+                    for (int i = 0; i < batch.size(); i++) {
+                        idArray[i] = Long.parseLong(batch.get(i));
+                    }
+                    profiles = twitter.lookupUsers(idArray);
+                } else {
+                    final String[] allocation = new String[batch.size()];
+                    profiles = twitter.lookupUsers(batch.toArray(allocation));
+                }
 
                 // extract the raw JSON
                 final String rawJsonProfiles = TwitterObjectFactory.getRawJSON(profiles);
@@ -191,7 +216,11 @@ public final class TwitterProfilesRetrieverApp {
                     final String profileId = profileNode.get("id_str").asText();
                     final String screenName = profileNode.get("screen_name").asText();
 
-                    notCollected.remove(screenName);
+                    if (useIDs) {
+                        notCollected.remove(profileId);
+                    } else {
+                        notCollected.remove(screenName);
+                    }
 
                     if (includeProtected || ! profileNode.get("protected").asBoolean()) {
                         idScreenNameMap.put(profileId, screenName);
@@ -210,22 +239,23 @@ public final class TwitterProfilesRetrieverApp {
                     }
                 });
 
-
             } catch (TwitterException e) {
                 LOG.warn("Failed to communicate with Twitter", e);
             }
         }
-        notCollected.stream().forEach(sn -> LOG.info("Did not collect @{}", sn));
+        notCollected.stream().forEach(sn -> LOG.info("Did not collect profile for ID {}", sn));
 
-        final String notCollectedReport = notCollected.stream()
-            .map(sn -> "@" + sn)
-            .collect(Collectors.joining("\n"));
-        saveText(notCollectedReport, outputDir + FILE_SEPARATOR + "profiles-not-collected.txt");
+        if (! notCollected.isEmpty()) {
+            final String notCollectedReport = Joiner.on('\n').join(notCollected);// notCollected.stream().collect(Collectors.joining("\n"));
+            saveText(notCollectedReport, outputDir + FILE_SEPARATOR + "profiles-not-collected.txt");
+        }
 
-        final String idCSV = idScreenNameMap.entrySet().stream()
-            .map(e -> String.format("%s # @%s\n", e.getKey(), e.getValue()))
-            .collect(Collectors.joining());
-        saveText(idCSV, outputDir + FILE_SEPARATOR + "ids.txt");
+        if (! idScreenNameMap.isEmpty()) {
+            final String idCSV = idScreenNameMap.entrySet().stream()
+                .map(e -> String.format("%s # @%s\n", e.getKey(), e.getValue()))
+                .collect(Collectors.joining());
+            saveText(idCSV, outputDir + FILE_SEPARATOR + "ids.txt");
+        }
     }
 
 
@@ -254,7 +284,7 @@ public final class TwitterProfilesRetrieverApp {
      * @return A set of unique screen names.
      * @throws IOException If an error occurs reading the file.
      */
-    private List<String> loadScreenNames(final String screenNamesFile) throws IOException {
+    private List<String> loadIdentifiersAsStrings(final String screenNamesFile) throws IOException {
         return Files.readAllLines(Paths.get(screenNamesFile)).stream()
             .map(l -> l.split("#")[0].trim())
             .filter(l -> l.length() > 0 && ! l.startsWith("#"))
