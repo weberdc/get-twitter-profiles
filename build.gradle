@@ -25,7 +25,7 @@ mainClassName = 'au.org.dcw.twitter.ingest.TwitterProfilesRetrieverApp'
 sourceCompatibility = 1.8
 targetCompatibility = 1.8
 
-task wrapper(type: Wrapper) {
+wrapper { //task wrapper(type: Wrapper) {
     gradleVersion = '3.0'
 }
 
