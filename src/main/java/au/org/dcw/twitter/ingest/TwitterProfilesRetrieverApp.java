@@ -415,11 +415,12 @@ public final class TwitterProfilesRetrieverApp {
 
             final Path newPath = Paths.get(altPath);
             if (! newPath.toFile().exists()) {
-                throw new RuntimeException(
+                LOG.warn(//throw new RuntimeException(
                     "Cannot find file at " + file + " nor alternative " + altPath
                 );
-            }
-            LOG.info("Found file at {}", newPath);
+            } else {
+				LOG.info("Found file at {}", newPath);
+			}
             return newPath;
         }
         return file;
